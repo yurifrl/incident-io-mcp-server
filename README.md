@@ -35,7 +35,23 @@ Optional environment variables:
 
 ## Configuration
 
-Example MCP configuration:
+Example MCP configuration for global installation:
+
+```json
+{
+  "mcpServers": {
+    "incident-io": {
+      "command": "incident-io-mcp-server",
+      "env": {
+        "API_KEY": "your-api-key-here",
+        "PORT": "3000"
+      }
+    }
+  }
+}
+```
+
+Example MCP configuration for local installation:
 
 ```json
 {
