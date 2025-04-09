@@ -25,6 +25,36 @@ const incidentIoApi = axios.create({
 
 app.use(express.json());
 
+// Root endpoint with available endpoints
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    endpoints: {
+      '/health': {
+        method: 'GET',
+        description: 'Health check endpoint'
+      },
+      '/mcp/incidents': {
+        methods: ['GET', 'POST'],
+        description: 'Get latest incidents or create a new incident',
+        post_body: {
+          name: 'string',
+          summary: 'string',
+          severity: 'string',
+          status: 'string (optional)',
+          created_at: 'string (optional)',
+          custom_fields: 'object (optional)',
+          test_incident: 'boolean (optional)',
+          visibility: 'string (optional)'
+        }
+      },
+      '/mcp/severities': {
+        method: 'GET',
+        description: 'Get available severities'
+      }
+    }
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'healthy' });
