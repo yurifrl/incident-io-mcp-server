@@ -6,10 +6,10 @@ A Model Context Protocol server for Incident.io integration.
 
 ```bash
 # Install directly from GitHub
-npm install -g github:clio/incident-io-mcp-server
+npm install -g github:stuartphilp/incident-io-mcp-server
 
 # Or clone and install locally
-git clone https://github.com/clio/incident-io-mcp-server.git
+git clone https://github.com/stuartphilp/incident-io-mcp-server.git
 cd incident-io-mcp-server
 npm install
 npm run build
