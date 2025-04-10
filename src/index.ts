@@ -132,6 +132,27 @@ app.get('/', (req: Request, res: Response) => {
           }
         }
       },
+      '/mcp/incidents/:reference': {
+        method: 'GET',
+        description: 'Get details of a single incident by its reference number',
+        parameters: {
+          reference: 'string (required) - The incident reference number (e.g., INC-1080)'
+        },
+        example: {
+          request: 'GET /mcp/incidents/INC-1080',
+          response: {
+            id: 'string - Unique incident ID',
+            reference: 'string - Incident reference number',
+            name: 'string - Incident name',
+            status: 'string - Current status',
+            severity: 'string - Severity level',
+            created_at: 'string - Creation timestamp',
+            permalink: 'string - URL to incident in incident.io',
+            visibility: 'string - Incident visibility',
+            // ... other optional fields
+          }
+        }
+      },
       '/mcp/severities': {
         method: 'GET',
         description: 'Get available severities'
@@ -376,6 +397,81 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
     console.error('Error creating incident:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Failed to create incident',
+      details: error.response?.data || { message: error.message }
+    });
+  }
+});
+
+// MCP endpoint to get a single incident by reference
+app.get('/mcp/incidents/:reference', async (req: Request, res: Response) => {
+  try {
+    const { reference } = req.params;
+    
+    // First, get all incidents to find the one with matching reference
+    const response = await incidentIoApi.get('/v1/incidents');
+    const incident = response.data.incidents.find((inc: any) => inc.reference === reference);
+
+    if (!incident) {
+      return res.status(404).json({
+        error: 'Incident not found',
+        details: `No incident found with reference ${reference}`
+      });
+    }
+
+    // Transform the incident data with all available properties
+    const baseIncident = {
+      id: incident.id,
+      reference: incident.reference,
+      name: incident.name,
+      status: incident.status,
+      severity: incident.severity.name,
+      created_at: incident.created_at,
+      permalink: incident.permalink,
+      visibility: incident.visibility
+    };
+
+    // Optional fields that may be present
+    const optionalFields = {
+      summary: incident.summary,
+      description: incident.description,
+      incident_type: incident.incident_type,
+      incident_role_assignments: incident.incident_role_assignments,
+      labels: incident.labels,
+      postmortem_document_url: incident.postmortem_document_url,
+      slack_channel_id: incident.slack_channel_id,
+      slack_channel_name: incident.slack_channel_name,
+      slack_team_id: incident.slack_team_id,
+      slack_team_name: incident.slack_team_name,
+      custom_fields: incident.custom_fields,
+      test_incident: incident.test_incident,
+      updated_at: incident.updated_at,
+      resolved_at: incident.resolved_at,
+      started_at: incident.started_at,
+      ended_at: incident.ended_at,
+      call_url: incident.call_url,
+      call_url_expires_at: incident.call_url_expires_at,
+      call_url_created_at: incident.call_url_created_at,
+      call_url_updated_at: incident.call_url_updated_at,
+      call_url_expires_in: incident.call_url_expires_in,
+      call_url_expires_in_seconds: incident.call_url_expires_in_seconds,
+      call_url_expires_in_minutes: incident.call_url_expires_in_minutes,
+      call_url_expires_in_hours: incident.call_url_expires_in_hours,
+      call_url_expires_in_days: incident.call_url_expires_in_days,
+      call_url_expires_in_weeks: incident.call_url_expires_in_weeks,
+      call_url_expires_in_months: incident.call_url_expires_in_months,
+      call_url_expires_in_years: incident.call_url_expires_in_years
+    };
+
+    // Filter out undefined optional fields
+    const filteredOptionalFields = Object.fromEntries(
+      Object.entries(optionalFields).filter(([_, value]) => value !== undefined)
+    );
+
+    res.json({ ...baseIncident, ...filteredOptionalFields });
+  } catch (error: any) {
+    console.error('Error fetching incident:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Failed to fetch incident',
       details: error.response?.data || { message: error.message }
     });
   }
