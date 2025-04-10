@@ -108,6 +108,27 @@ app.get('/', (req: Request, res: Response) => {
             page_size: 'Number of incidents returned in this page',
             after: 'Cursor to use for fetching the next page',
             has_more: 'Boolean indicating if there are more incidents to fetch'
+          },
+          usage: {
+            description: 'To fetch all incidents, follow these steps:',
+            steps: [
+              '1. Make initial request without the after parameter',
+              '2. Check has_more in the response',
+              '3. If has_more is true, use the after value from the response for the next request',
+              '4. Repeat steps 2-3 until has_more is false',
+              '5. Combine all incidents from each response'
+            ],
+            example: {
+              first_request: 'GET /mcp/incidents?page_size=100',
+              next_request: 'GET /mcp/incidents?page_size=100&after=01JN78CSP3YCEHXY3DFN6V16YP',
+              response_format: {
+                incidents: 'Array of incident objects',
+                total_count: 'Total number of incidents',
+                page_size: 'Number of incidents in this page',
+                after: 'Cursor for next page',
+                has_more: 'Boolean indicating if more pages exist'
+              }
+            }
           }
         }
       },
