@@ -36,6 +36,10 @@ app.get('/', (req: Request, res: Response) => {
       '/mcp/incidents': {
         methods: ['GET', 'POST'],
         description: 'Get latest incidents or create a new incident',
+        get_parameters: {
+          page_size: 'number (optional, default: 25) - Number of incidents to return per page',
+          after: 'string (optional) - Cursor for pagination, use the after value from the previous response'
+        },
         post_body: {
           name: 'string (required)',
           summary: 'string (required)',
@@ -96,6 +100,15 @@ app.get('/', (req: Request, res: Response) => {
             'call_url_expires_in_months',
             'call_url_expires_in_years'
           ]
+        },
+        pagination: {
+          description: 'The response includes pagination information to fetch all incidents',
+          fields: {
+            total_count: 'Total number of incidents available',
+            page_size: 'Number of incidents returned in this page',
+            after: 'Cursor to use for fetching the next page',
+            has_more: 'Boolean indicating if there are more incidents to fetch'
+          }
         }
       },
       '/mcp/severities': {
@@ -114,7 +127,18 @@ app.get('/health', (req: Request, res: Response) => {
 // MCP endpoint to get latest incidents
 app.get('/mcp/incidents', async (req: Request, res: Response) => {
   try {
-    const response = await incidentIoApi.get('/v1/incidents');
+    // Get pagination parameters from query string
+    const pageSize = parseInt(req.query.page_size as string) || 25;
+    const after = req.query.after as string;
+    
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.append('page_size', pageSize.toString());
+    if (after) {
+      queryParams.append('after', after);
+    }
+
+    const response = await incidentIoApi.get(`/v1/incidents?${queryParams.toString()}`);
     
     // Transform the incidents data with all available properties
     const incidents = response.data.incidents.map((incident: any) => {
@@ -172,7 +196,12 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
 
     res.json({
       incidents,
-      total_count: response.data.pagination_meta.total_record_count
+      pagination: {
+        total_count: response.data.pagination_meta.total_record_count,
+        page_size: pageSize,
+        after: response.data.pagination_meta.after,
+        has_more: response.data.pagination_meta.has_more
+      }
     });
   } catch (error: any) {
     console.error('Error fetching incidents:', error.response?.data || error.message);
