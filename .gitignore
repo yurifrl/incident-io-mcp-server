@@ -1,5 +1,6 @@
 node_modules/
 dist/
+fetch_all_incidents.js
 .env
 .DS_Store
 *.log

@@ -131,17 +131,22 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
     const pageSize = parseInt(req.query.page_size as string) || 25;
     const after = req.query.after as string;
     
-    // Build query parameters
+    // Build query parameters for incident.io API
     const queryParams = new URLSearchParams();
     queryParams.append('page_size', pageSize.toString());
     if (after) {
       queryParams.append('after', after);
     }
 
+    console.log('Fetching incidents with params:', queryParams.toString());
     const response = await incidentIoApi.get(`/v1/incidents?${queryParams.toString()}`);
-    
+    console.log('Response pagination:', response.data.pagination_meta);
+
+    const incidents = response.data.incidents;
+    const pagination = response.data.pagination_meta;
+
     // Transform the incidents data with all available properties
-    const incidents = response.data.incidents.map((incident: any) => {
+    const transformedIncidents = incidents.map((incident: any) => {
       // Base fields that are always present
       const baseIncident = {
         id: incident.id,
@@ -194,14 +199,15 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
       return { ...baseIncident, ...filteredOptionalFields };
     });
 
+    // Check if there are more incidents based on the total count
+    const hasMore = pagination.after !== null && pagination.after !== undefined;
+
     res.json({
-      incidents,
-      pagination: {
-        total_count: response.data.pagination_meta.total_record_count,
-        page_size: pageSize,
-        after: response.data.pagination_meta.after,
-        has_more: response.data.pagination_meta.has_more
-      }
+      incidents: transformedIncidents,
+      total_count: pagination.total_record_count,
+      page_size: pageSize,
+      after: pagination.after,
+      has_more: hasMore
     });
   } catch (error: any) {
     console.error('Error fetching incidents:', error.response?.data || error.message);
