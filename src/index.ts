@@ -37,14 +37,65 @@ app.get('/', (req: Request, res: Response) => {
         methods: ['GET', 'POST'],
         description: 'Get latest incidents or create a new incident',
         post_body: {
-          name: 'string',
-          summary: 'string',
-          severity: 'string',
+          name: 'string (required)',
+          summary: 'string (required)',
+          severity: 'string (required)',
           status: 'string (optional)',
           created_at: 'string (optional)',
           custom_fields: 'object (optional)',
           test_incident: 'boolean (optional)',
-          visibility: 'string (optional)'
+          visibility: 'string (optional)',
+          description: 'string (optional)',
+          incident_type: 'string (optional)',
+          incident_role_assignments: 'array (optional)',
+          labels: 'array (optional)',
+          postmortem_document_url: 'string (optional)',
+          slack_channel_id: 'string (optional)',
+          slack_channel_name: 'string (optional)',
+          slack_team_id: 'string (optional)',
+          slack_team_name: 'string (optional)'
+        },
+        response_fields: {
+          always_present: [
+            'id',
+            'reference',
+            'name',
+            'status',
+            'severity',
+            'created_at',
+            'permalink',
+            'visibility'
+          ],
+          optional: [
+            'summary',
+            'description',
+            'incident_type',
+            'incident_role_assignments',
+            'labels',
+            'postmortem_document_url',
+            'slack_channel_id',
+            'slack_channel_name',
+            'slack_team_id',
+            'slack_team_name',
+            'custom_fields',
+            'test_incident',
+            'updated_at',
+            'resolved_at',
+            'started_at',
+            'ended_at',
+            'call_url',
+            'call_url_expires_at',
+            'call_url_created_at',
+            'call_url_updated_at',
+            'call_url_expires_in',
+            'call_url_expires_in_seconds',
+            'call_url_expires_in_minutes',
+            'call_url_expires_in_hours',
+            'call_url_expires_in_days',
+            'call_url_expires_in_weeks',
+            'call_url_expires_in_months',
+            'call_url_expires_in_years'
+          ]
         }
       },
       '/mcp/severities': {
@@ -65,17 +116,59 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
   try {
     const response = await incidentIoApi.get('/v1/incidents');
     
-    // Transform the incidents data
-    const incidents = response.data.incidents.map((incident: any) => ({
-      id: incident.id,
-      reference: incident.reference,
-      name: incident.name,
-      status: incident.status,
-      severity: incident.severity.name,
-      created_at: incident.created_at,
-      summary: incident.summary,
-      permalink: incident.permalink
-    }));
+    // Transform the incidents data with all available properties
+    const incidents = response.data.incidents.map((incident: any) => {
+      // Base fields that are always present
+      const baseIncident = {
+        id: incident.id,
+        reference: incident.reference,
+        name: incident.name,
+        status: incident.status,
+        severity: incident.severity.name,
+        created_at: incident.created_at,
+        permalink: incident.permalink,
+        visibility: incident.visibility
+      };
+
+      // Optional fields that may be present
+      const optionalFields = {
+        summary: incident.summary,
+        description: incident.description,
+        incident_type: incident.incident_type,
+        incident_role_assignments: incident.incident_role_assignments,
+        labels: incident.labels,
+        postmortem_document_url: incident.postmortem_document_url,
+        slack_channel_id: incident.slack_channel_id,
+        slack_channel_name: incident.slack_channel_name,
+        slack_team_id: incident.slack_team_id,
+        slack_team_name: incident.slack_team_name,
+        custom_fields: incident.custom_fields,
+        test_incident: incident.test_incident,
+        updated_at: incident.updated_at,
+        resolved_at: incident.resolved_at,
+        started_at: incident.started_at,
+        ended_at: incident.ended_at,
+        call_url: incident.call_url,
+        call_url_expires_at: incident.call_url_expires_at,
+        call_url_created_at: incident.call_url_created_at,
+        call_url_updated_at: incident.call_url_updated_at,
+        call_url_expires_in: incident.call_url_expires_in,
+        call_url_expires_in_seconds: incident.call_url_expires_in_seconds,
+        call_url_expires_in_minutes: incident.call_url_expires_in_minutes,
+        call_url_expires_in_hours: incident.call_url_expires_in_hours,
+        call_url_expires_in_days: incident.call_url_expires_in_days,
+        call_url_expires_in_weeks: incident.call_url_expires_in_weeks,
+        call_url_expires_in_months: incident.call_url_expires_in_months,
+        call_url_expires_in_years: incident.call_url_expires_in_years
+      };
+
+      // Filter out undefined optional fields
+      const filteredOptionalFields = Object.fromEntries(
+        Object.entries(optionalFields).filter(([_, value]) => value !== undefined)
+      );
+
+      return { ...baseIncident, ...filteredOptionalFields };
+    });
 
     res.json({
       incidents,
@@ -115,7 +208,16 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
       created_at,
       custom_fields = {},
       test_incident = false,
-      visibility = 'private'
+      visibility = 'private',
+      description,
+      incident_type,
+      incident_role_assignments,
+      labels,
+      postmortem_document_url,
+      slack_channel_id,
+      slack_channel_name,
+      slack_team_id,
+      slack_team_name
     } = req.body;
 
     // Validate required fields
@@ -147,7 +249,7 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
     // Generate a unique idempotency key using timestamp and random string
     const idempotency_key = `mcp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
-    // Create the incident
+    // Create the incident with all available fields
     const requestPayload = {
       idempotency_key,
       visibility,
@@ -158,26 +260,60 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
         status,
         created_at,
         custom_fields,
-        test_incident
+        test_incident,
+        description,
+        incident_type,
+        incident_role_assignments,
+        labels,
+        postmortem_document_url,
+        slack_channel_id,
+        slack_channel_name,
+        slack_team_id,
+        slack_team_name
       }
     };
     
     console.log('Creating incident with payload:', JSON.stringify(requestPayload, null, 2));
     const response = await incidentIoApi.post('/v1/incidents', requestPayload);
 
-    // Transform the response to match our format
-    const createdIncident = {
+    // Transform the response to match our format with all available fields
+    const baseIncident = {
       id: response.data.incident.id,
       reference: response.data.incident.reference,
       name: response.data.incident.name,
       status: response.data.incident.status,
       severity: response.data.incident.severity.name,
       created_at: response.data.incident.created_at,
-      summary: response.data.incident.summary,
       permalink: response.data.incident.permalink,
-      test_incident: response.data.incident.test_incident,
       visibility: response.data.incident.visibility
     };
+
+    // Optional fields that may be present
+    const optionalFields = {
+      summary: response.data.incident.summary,
+      description: response.data.incident.description,
+      incident_type: response.data.incident.incident_type,
+      incident_role_assignments: response.data.incident.incident_role_assignments,
+      labels: response.data.incident.labels,
+      postmortem_document_url: response.data.incident.postmortem_document_url,
+      slack_channel_id: response.data.incident.slack_channel_id,
+      slack_channel_name: response.data.incident.slack_channel_name,
+      slack_team_id: response.data.incident.slack_team_id,
+      slack_team_name: response.data.incident.slack_team_name,
+      custom_fields: response.data.incident.custom_fields,
+      test_incident: response.data.incident.test_incident,
+      updated_at: response.data.incident.updated_at,
+      resolved_at: response.data.incident.resolved_at,
+      started_at: response.data.incident.started_at,
+      ended_at: response.data.incident.ended_at
+    };
+
+    // Filter out undefined optional fields
+    const filteredOptionalFields = Object.fromEntries(
+      Object.entries(optionalFields).filter(([_, value]) => value !== undefined)
+    );
+
+    const createdIncident = { ...baseIncident, ...filteredOptionalFields };
 
     res.status(201).json(createdIncident);
   } catch (error: any) {
