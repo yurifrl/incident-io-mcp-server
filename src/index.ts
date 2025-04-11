@@ -35,7 +35,8 @@ const incidentIoApiV1 = axios.create({
 // Cache for incident types, statuses, and severities
 let incidentTypesCache: any[] = [];
 let severitiesCache: any[] = [];
-const validStatuses = ['investigating', 'identified', 'monitoring', 'resolved', 'postmortem'];
+let incidentStatusesCache: any[] = [];
+
 
 // Function to refresh the cache
 async function refreshCache() {
@@ -49,6 +50,11 @@ async function refreshCache() {
     const severitiesResponse = await incidentIoApiV1.get('/severities');
     severitiesCache = severitiesResponse.data.severities;
     console.log('Cached severities:', severitiesCache.map(s => s.name).join(', '));
+
+    // Get incident statuses from v1 API
+    const statusesResponse = await incidentIoApiV1.get('/incident_statuses');
+    incidentStatusesCache = statusesResponse.data.incident_statuses;
+    console.log('Cached incident statuses:', incidentStatusesCache.map(s => s.name).join(', '));
   } catch (error) {
     console.error('Error refreshing cache:', error);
   }
@@ -431,6 +437,7 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
       severity_id,
       status,
       created_at,
+      resolved_at,
       custom_field_entries = [],
       visibility,
       description,
@@ -447,7 +454,11 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
       mode,
       external_issue_reference,
       incident_timestamp_values = [],
-      duration_metrics
+      duration_metrics,
+      metadata,
+      product,
+      region,
+      feature
     } = req.body;
 
     // Validate required fields
@@ -494,35 +505,80 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
       }
     }
 
+    // Handle incident status
+    let finalStatusId = undefined;
+    if (status) {
+      const statusObj = incidentStatusesCache.find(
+        (s: any) => s.name.toLowerCase() === status.toLowerCase()
+      );
+      
+      if (!statusObj) {
+        return res.status(400).json({
+          error: 'Invalid status',
+          details: {
+            message: `Status "${status}" not found. Available statuses: ${incidentStatusesCache.map((s: any) => s.name).join(', ')}`,
+          }
+        });
+      }
+      finalStatusId = statusObj.id;
+    } else if (mode === 'retrospective') {
+      // Default to Closed for retrospective incidents
+      const closedStatus = incidentStatusesCache.find(
+        (s: any) => s.name.toLowerCase() === 'closed'
+      );
+      if (closedStatus) {
+        finalStatusId = closedStatus.id;
+      }
+    }
+
     // Generate idempotency key if not provided
     const finalIdempotencyKey = idempotency_key || `mcp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
     // Create the incident with all available fields
     const requestPayload = {
       idempotency_key: finalIdempotencyKey,
-      visibility: visibility,
-      incident: {
-        name,
-        summary,
-        severity_id: finalSeverityId,
-        incident_status_id: status,
-        created_at,
-        custom_field_entries,
-        description,
-        incident_type_id: finalIncidentTypeId,
-        incident_role_assignments,
-        labels,
-        postmortem_document_url,
-        slack_channel_id,
-        slack_channel_name,
-        slack_team_id,
-        slack_team_name,
-        mode,
-        external_issue_reference,
-        incident_timestamp_values,
-        duration_metrics,
-        preserve_name: true
-      }
+      severity_id: finalSeverityId,
+      incident_status_id: finalStatusId,
+      visibility: metadata?.visibility || visibility || 'private',
+      mode: mode || 'standard',
+      incident_type_id: finalIncidentTypeId,
+      name,
+      summary: metadata?.summary || summary,
+      created_at: metadata?.created_at || created_at,
+      custom_field_entries: [
+        ...custom_field_entries,
+        ...(product ? [{ 
+          custom_field_id: 'product', 
+          values: [{ value_text: product }] 
+        }] : []),
+        ...(region ? [{ 
+          custom_field_id: 'region', 
+          values: [{ value_text: region }] 
+        }] : []),
+        ...(feature ? [{ 
+          custom_field_id: 'feature', 
+          values: [{ value_text: feature }] 
+        }] : [])
+      ],
+      description: metadata?.summary || description,
+      incident_role_assignments,
+      labels,
+      postmortem_document_url: metadata?.postmortem_document_url || postmortem_document_url,
+      slack_channel_id,
+      slack_channel_name: metadata?.slack_channel_name || slack_channel_name,
+      slack_team_id,
+      slack_team_name,
+      external_issue_reference,
+      duration_metrics,
+      ...(mode === 'retrospective' && created_at ? {
+        retrospective_incident_options: {
+          ...(postmortem_document_url ? { postmortem_document_url: metadata?.postmortem_document_url || postmortem_document_url } : {}),
+          ...(slack_channel_id ? { slack_channel_id } : {}),
+          reported_at: created_at,
+          ...(status && status.toLowerCase() === 'closed' ? { closed_at: created_at } : {})
+        }
+      } : {}),
+      preserve_name: true
     };
     
     // Log the request payload for debugging
