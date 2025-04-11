@@ -16,7 +16,7 @@ const app = express();
 
 // Initialize axios instance for incident.io API
 const incidentIoApi = axios.create({
-  baseURL: 'https://api.incident.io',
+  baseURL: 'https://api.incident.io/v2',
   headers: {
     'Authorization': `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
@@ -43,12 +43,12 @@ app.get('/', (req: Request, res: Response) => {
         post_body: {
           name: 'string (required)',
           summary: 'string (required)',
-          severity: 'string (required)',
-          status: 'string (optional)',
+          severity: 'string (required) or severity_id: string (required)',
+          status: 'string (optional, default: investigating)',
           created_at: 'string (optional)',
-          custom_fields: 'object (optional)',
+          custom_field_entries: 'array (optional) - Array of custom field entries',
           test_incident: 'boolean (optional)',
-          visibility: 'string (optional)',
+          visibility: 'string (optional, default: private)',
           description: 'string (optional)',
           incident_type: 'string (optional)',
           incident_role_assignments: 'array (optional)',
@@ -57,7 +57,9 @@ app.get('/', (req: Request, res: Response) => {
           slack_channel_id: 'string (optional)',
           slack_channel_name: 'string (optional)',
           slack_team_id: 'string (optional)',
-          slack_team_name: 'string (optional)'
+          slack_team_name: 'string (optional)',
+          mode: 'string (optional, default: standard) - Use "retrospective" for historical incidents',
+          metadata: 'object (optional) - Can contain status, created_at, postmortem_document_url, slack_channel_name, incident_type, mode'
         },
         response_fields: {
           always_present: [
@@ -68,22 +70,21 @@ app.get('/', (req: Request, res: Response) => {
             'severity',
             'created_at',
             'permalink',
-            'visibility'
-          ],
-          optional: [
+            'visibility',
+            'mode',
             'summary',
-            'description',
             'incident_type',
-            'incident_role_assignments',
-            'labels',
             'postmortem_document_url',
             'slack_channel_id',
             'slack_channel_name',
             'slack_team_id',
-            'slack_team_name',
-            'custom_fields',
-            'test_incident',
-            'updated_at',
+            'updated_at'
+          ],
+          optional: [
+            'description',
+            'incident_role_assignments',
+            'labels',
+            'custom_field_entries',
             'resolved_at',
             'started_at',
             'ended_at',
@@ -98,7 +99,10 @@ app.get('/', (req: Request, res: Response) => {
             'call_url_expires_in_days',
             'call_url_expires_in_weeks',
             'call_url_expires_in_months',
-            'call_url_expires_in_years'
+            'call_url_expires_in_years',
+            'external_issue_reference',
+            'duration_metrics',
+            'incident_timestamp_values'
           ]
         },
         pagination: {
@@ -123,10 +127,12 @@ app.get('/', (req: Request, res: Response) => {
               next_request: 'GET /mcp/incidents?page_size=100&after=01JN78CSP3YCEHXY3DFN6V16YP',
               response_format: {
                 incidents: 'Array of incident objects',
-                total_count: 'Total number of incidents',
-                page_size: 'Number of incidents in this page',
-                after: 'Cursor for next page',
-                has_more: 'Boolean indicating if more pages exist'
+                pagination: {
+                  total_count: 'Total number of incidents',
+                  page_size: 'Number of incidents in this page',
+                  after: 'Cursor for next page',
+                  has_more: 'Boolean indicating if more pages exist'
+                }
               }
             }
           }
@@ -149,13 +155,82 @@ app.get('/', (req: Request, res: Response) => {
             created_at: 'string - Creation timestamp',
             permalink: 'string - URL to incident in incident.io',
             visibility: 'string - Incident visibility',
+            mode: 'string - Incident mode (standard or retrospective)',
+            summary: 'string - Incident summary',
+            incident_type: 'object - Incident type details',
+            postmortem_document_url: 'string - URL to postmortem document',
+            slack_channel_id: 'string - Slack channel ID',
+            slack_channel_name: 'string - Slack channel name',
+            slack_team_id: 'string - Slack team ID',
+            updated_at: 'string - Last update timestamp',
             // ... other optional fields
+          }
+        }
+      },
+      '/mcp/incidents/:reference/status': {
+        method: 'POST',
+        description: 'Update the status of an incident',
+        parameters: {
+          reference: 'string (required) - The incident reference number (e.g., INC-1080)'
+        },
+        post_body: {
+          status: 'string (required) - New status for the incident'
+        },
+        example: {
+          request: 'POST /mcp/incidents/INC-1080/status',
+          request_body: {
+            status: 'resolved'
+          },
+          response: {
+            id: 'string - Incident ID',
+            reference: 'string - Incident reference',
+            status: 'string - New status',
+            updated_at: 'string - Update timestamp'
+          }
+        }
+      },
+      '/mcp/incidents/:reference/timestamps': {
+        method: 'POST',
+        description: 'Add a timestamp to an incident',
+        parameters: {
+          reference: 'string (required) - The incident reference number (e.g., INC-1080)'
+        },
+        post_body: {
+          timestamp_name: 'string (required) - Name of the timestamp',
+          value: 'string (required) - ISO 8601 timestamp'
+        },
+        example: {
+          request: 'POST /mcp/incidents/INC-1080/timestamps',
+          request_body: {
+            timestamp_name: 'Impact started',
+            value: '2025-04-09T11:53:53.977Z'
+          },
+          response: {
+            incident_timestamp: {
+              id: 'string - Timestamp ID',
+              name: 'string - Timestamp name',
+              rank: 'number - Timestamp rank'
+            },
+            value: {
+              value: 'string - Timestamp value'
+            }
           }
         }
       },
       '/mcp/severities': {
         method: 'GET',
-        description: 'Get available severities'
+        description: 'Get available severities',
+        response: {
+          severities: 'array - List of available severities',
+          each_severity: {
+            id: 'string - Severity ID',
+            name: 'string - Severity name',
+            description: 'string - Severity description',
+            rank: 'number - Severity rank',
+            created_at: 'string - Creation timestamp',
+            updated_at: 'string - Last update timestamp'
+          }
+        }
       }
     }
   });
@@ -181,11 +256,10 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
     }
 
     console.log('Fetching incidents with params:', queryParams.toString());
-    const response = await incidentIoApi.get(`/v1/incidents?${queryParams.toString()}`);
+    const response = await incidentIoApi.get(`/incidents?${queryParams.toString()}`);
     console.log('Response pagination:', response.data.pagination_meta);
 
     const incidents = response.data.incidents;
-    const pagination = response.data.pagination_meta;
 
     // Transform the incidents data with all available properties
     const transformedIncidents = incidents.map((incident: any) => {
@@ -194,28 +268,27 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
         id: incident.id,
         reference: incident.reference,
         name: incident.name,
-        status: incident.status,
+        status: incident.incident_status.name,
         severity: incident.severity.name,
         created_at: incident.created_at,
         permalink: incident.permalink,
-        visibility: incident.visibility
-      };
-
-      // Optional fields that may be present
-      const optionalFields = {
+        visibility: incident.visibility,
+        mode: incident.mode,
         summary: incident.summary,
-        description: incident.description,
         incident_type: incident.incident_type,
-        incident_role_assignments: incident.incident_role_assignments,
-        labels: incident.labels,
         postmortem_document_url: incident.postmortem_document_url,
         slack_channel_id: incident.slack_channel_id,
         slack_channel_name: incident.slack_channel_name,
         slack_team_id: incident.slack_team_id,
-        slack_team_name: incident.slack_team_name,
-        custom_fields: incident.custom_fields,
-        test_incident: incident.test_incident,
-        updated_at: incident.updated_at,
+        updated_at: incident.updated_at
+      };
+
+      // Optional fields that may be present
+      const optionalFields = {
+        description: incident.description,
+        incident_role_assignments: incident.incident_role_assignments,
+        labels: incident.labels,
+        custom_fields: incident.custom_field_entries,
         resolved_at: incident.resolved_at,
         started_at: incident.started_at,
         ended_at: incident.ended_at,
@@ -230,7 +303,10 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
         call_url_expires_in_days: incident.call_url_expires_in_days,
         call_url_expires_in_weeks: incident.call_url_expires_in_weeks,
         call_url_expires_in_months: incident.call_url_expires_in_months,
-        call_url_expires_in_years: incident.call_url_expires_in_years
+        call_url_expires_in_years: incident.call_url_expires_in_years,
+        external_issue_reference: incident.external_issue_reference,
+        duration_metrics: incident.duration_metrics,
+        incident_timestamp_values: incident.incident_timestamp_values
       };
 
       // Filter out undefined optional fields
@@ -241,15 +317,9 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
       return { ...baseIncident, ...filteredOptionalFields };
     });
 
-    // Check if there are more incidents based on the total count
-    const hasMore = pagination.after !== null && pagination.after !== undefined;
-
     res.json({
       incidents: transformedIncidents,
-      total_count: pagination.total_record_count,
-      page_size: pageSize,
-      after: pagination.after,
-      has_more: hasMore
+      pagination: response.data.pagination_meta
     });
   } catch (error: any) {
     console.error('Error fetching incidents:', error.response?.data || error.message);
@@ -263,7 +333,7 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
 // MCP endpoint to get severities
 app.get('/mcp/severities', async (req: Request, res: Response) => {
   try {
-    const response = await incidentIoApi.get('/v1/severities');
+    const response = await incidentIoApi.get('/severities');
     res.json(response.data);
   } catch (error: any) {
     console.error('Error fetching severities:', error.response?.data || error.message);
@@ -277,10 +347,11 @@ app.get('/mcp/severities', async (req: Request, res: Response) => {
 // MCP endpoint to create incidents
 app.post('/mcp/incidents', async (req: Request, res: Response) => {
   try {
-    const {
+    let {
       name,
       summary,
       severity,
+      severity_id,
       status = 'investigating',
       created_at,
       custom_fields = {},
@@ -294,49 +365,76 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
       slack_channel_id,
       slack_channel_name,
       slack_team_id,
-      slack_team_name
+      slack_team_name,
+      metadata,
+      idempotency_key,
+      mode = 'standard'
     } = req.body;
 
     // Validate required fields
-    if (!name || !summary || !severity) {
+    if (!name || !summary || (!severity && !severity_id)) {
       return res.status(400).json({
         error: 'Missing required fields',
         details: {
-          required: ['name', 'summary', 'severity'],
+          required: ['name', 'summary', 'severity or severity_id'],
           received: Object.keys(req.body)
         }
       });
     }
 
-    // Fetch available severities and find the matching ID
-    const severitiesResponse = await incidentIoApi.get('/v1/severities');
-    const severityId = severitiesResponse.data.severities.find(
-      (s: any) => s.name.toLowerCase() === severity.toLowerCase()
-    )?.id;
+    // If severity_id is provided, use it directly, otherwise look up the severity
+    let finalSeverityId = severity_id;
+    if (!finalSeverityId && severity) {
+      const severitiesResponse = await incidentIoApi.get('/severities');
+      finalSeverityId = severitiesResponse.data.severities.find(
+        (s: any) => s.name.toLowerCase() === severity.toLowerCase()
+      )?.id;
 
-    if (!severityId) {
-      return res.status(400).json({
-        error: 'Invalid severity',
-        details: {
-          message: `Severity "${severity}" not found. Available severities: ${severitiesResponse.data.severities.map((s: any) => s.name).join(', ')}`,
-        }
-      });
+      if (!finalSeverityId) {
+        return res.status(400).json({
+          error: 'Invalid severity',
+          details: {
+            message: `Severity "${severity}" not found. Available severities: ${severitiesResponse.data.severities.map((s: any) => s.name).join(', ')}`,
+          }
+        });
+      }
     }
 
-    // Generate a unique idempotency key using timestamp and random string
-    const idempotency_key = `mcp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    // Process metadata if provided
+    if (metadata) {
+      if (metadata.status) {
+        status = metadata.status;
+      }
+      if (metadata.created_at) {
+        created_at = metadata.created_at;
+      }
+      if (metadata.postmortem_document_url) {
+        postmortem_document_url = metadata.postmortem_document_url;
+      }
+      if (metadata.slack_channel_name) {
+        slack_channel_name = metadata.slack_channel_name;
+      }
+      if (metadata.incident_type) {
+        incident_type = metadata.incident_type;
+      }
+      if (metadata.mode) {
+        mode = metadata.mode;
+      }
+    }
+
+    // Generate idempotency key if not provided
+    const finalIdempotencyKey = idempotency_key || `mcp-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
     // Create the incident with all available fields
     const requestPayload = {
-      idempotency_key,
-      visibility,
-      severity_id: severityId,
+      idempotency_key: finalIdempotencyKey,
       incident: {
         name,
         summary,
+        severity_id: finalSeverityId,
         status,
         created_at,
-        custom_fields,
+        custom_field_entries: custom_fields,
         test_incident,
         description,
         incident_type,
@@ -346,43 +444,59 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
         slack_channel_id,
         slack_channel_name,
         slack_team_id,
-        slack_team_name
+        slack_team_name,
+        visibility,
+        mode
       }
     };
     
     console.log('Creating incident with payload:', JSON.stringify(requestPayload, null, 2));
-    const response = await incidentIoApi.post('/v1/incidents', requestPayload);
+    const response = await incidentIoApi.post('/incidents', requestPayload);
 
-    // Transform the response to match our format with all available fields
+    // Transform the response to match our format
     const baseIncident = {
       id: response.data.incident.id,
       reference: response.data.incident.reference,
       name: response.data.incident.name,
-      status: response.data.incident.status,
+      status: response.data.incident.incident_status.name,
       severity: response.data.incident.severity.name,
       created_at: response.data.incident.created_at,
       permalink: response.data.incident.permalink,
-      visibility: response.data.incident.visibility
-    };
-
-    // Optional fields that may be present
-    const optionalFields = {
+      visibility: response.data.incident.visibility,
+      mode: response.data.incident.mode,
       summary: response.data.incident.summary,
-      description: response.data.incident.description,
       incident_type: response.data.incident.incident_type,
-      incident_role_assignments: response.data.incident.incident_role_assignments,
-      labels: response.data.incident.labels,
       postmortem_document_url: response.data.incident.postmortem_document_url,
       slack_channel_id: response.data.incident.slack_channel_id,
       slack_channel_name: response.data.incident.slack_channel_name,
       slack_team_id: response.data.incident.slack_team_id,
-      slack_team_name: response.data.incident.slack_team_name,
-      custom_fields: response.data.incident.custom_fields,
-      test_incident: response.data.incident.test_incident,
-      updated_at: response.data.incident.updated_at,
+      updated_at: response.data.incident.updated_at
+    };
+
+    // Optional fields that may be present
+    const optionalFields = {
+      description: response.data.incident.description,
+      incident_role_assignments: response.data.incident.incident_role_assignments,
+      labels: response.data.incident.labels,
+      custom_fields: response.data.incident.custom_field_entries,
       resolved_at: response.data.incident.resolved_at,
       started_at: response.data.incident.started_at,
-      ended_at: response.data.incident.ended_at
+      ended_at: response.data.incident.ended_at,
+      call_url: response.data.incident.call_url,
+      call_url_expires_at: response.data.incident.call_url_expires_at,
+      call_url_created_at: response.data.incident.call_url_created_at,
+      call_url_updated_at: response.data.incident.call_url_updated_at,
+      call_url_expires_in: response.data.incident.call_url_expires_in,
+      call_url_expires_in_seconds: response.data.incident.call_url_expires_in_seconds,
+      call_url_expires_in_minutes: response.data.incident.call_url_expires_in_minutes,
+      call_url_expires_in_hours: response.data.incident.call_url_expires_in_hours,
+      call_url_expires_in_days: response.data.incident.call_url_expires_in_days,
+      call_url_expires_in_weeks: response.data.incident.call_url_expires_in_weeks,
+      call_url_expires_in_months: response.data.incident.call_url_expires_in_months,
+      call_url_expires_in_years: response.data.incident.call_url_expires_in_years,
+      external_issue_reference: response.data.incident.external_issue_reference,
+      duration_metrics: response.data.incident.duration_metrics,
+      incident_timestamp_values: response.data.incident.incident_timestamp_values
     };
 
     // Filter out undefined optional fields
@@ -408,7 +522,7 @@ app.get('/mcp/incidents/:reference', async (req: Request, res: Response) => {
     const { reference } = req.params;
     
     // First, get all incidents to find the one with matching reference
-    const response = await incidentIoApi.get('/v1/incidents');
+    const response = await incidentIoApi.get('/incidents');
     const incident = response.data.incidents.find((inc: any) => inc.reference === reference);
 
     if (!incident) {
@@ -423,28 +537,27 @@ app.get('/mcp/incidents/:reference', async (req: Request, res: Response) => {
       id: incident.id,
       reference: incident.reference,
       name: incident.name,
-      status: incident.status,
+      status: incident.incident_status.name,
       severity: incident.severity.name,
       created_at: incident.created_at,
       permalink: incident.permalink,
-      visibility: incident.visibility
-    };
-
-    // Optional fields that may be present
-    const optionalFields = {
+      visibility: incident.visibility,
+      mode: incident.mode,
       summary: incident.summary,
-      description: incident.description,
       incident_type: incident.incident_type,
-      incident_role_assignments: incident.incident_role_assignments,
-      labels: incident.labels,
       postmortem_document_url: incident.postmortem_document_url,
       slack_channel_id: incident.slack_channel_id,
       slack_channel_name: incident.slack_channel_name,
       slack_team_id: incident.slack_team_id,
-      slack_team_name: incident.slack_team_name,
-      custom_fields: incident.custom_fields,
-      test_incident: incident.test_incident,
-      updated_at: incident.updated_at,
+      updated_at: incident.updated_at
+    };
+
+    // Optional fields that may be present
+    const optionalFields = {
+      description: incident.description,
+      incident_role_assignments: incident.incident_role_assignments,
+      labels: incident.labels,
+      custom_fields: incident.custom_field_entries,
       resolved_at: incident.resolved_at,
       started_at: incident.started_at,
       ended_at: incident.ended_at,
@@ -459,7 +572,10 @@ app.get('/mcp/incidents/:reference', async (req: Request, res: Response) => {
       call_url_expires_in_days: incident.call_url_expires_in_days,
       call_url_expires_in_weeks: incident.call_url_expires_in_weeks,
       call_url_expires_in_months: incident.call_url_expires_in_months,
-      call_url_expires_in_years: incident.call_url_expires_in_years
+      call_url_expires_in_years: incident.call_url_expires_in_years,
+      external_issue_reference: incident.external_issue_reference,
+      duration_metrics: incident.duration_metrics,
+      incident_timestamp_values: incident.incident_timestamp_values
     };
 
     // Filter out undefined optional fields
@@ -472,6 +588,96 @@ app.get('/mcp/incidents/:reference', async (req: Request, res: Response) => {
     console.error('Error fetching incident:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Failed to fetch incident',
+      details: error.response?.data || { message: error.message }
+    });
+  }
+});
+
+// MCP endpoint to update incident status
+app.post('/mcp/incidents/:reference/status', async (req: Request, res: Response) => {
+  try {
+    const { reference } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        error: 'Missing required field',
+        details: {
+          required: ['status'],
+          received: Object.keys(req.body)
+        }
+      });
+    }
+
+    // First, get the incident to find its ID
+    const incidentsResponse = await incidentIoApi.get('/incidents');
+    const incident = incidentsResponse.data.incidents.find((inc: any) => inc.reference === reference);
+
+    if (!incident) {
+      return res.status(404).json({
+        error: 'Incident not found',
+        details: `No incident found with reference ${reference}`
+      });
+    }
+
+    // Update the incident status
+    const response = await incidentIoApi.post(`/incidents/${incident.id}/status`, {
+      status
+    });
+
+    res.json({
+      id: response.data.incident.id,
+      reference: response.data.incident.reference,
+      status: response.data.incident.incident_status.name,
+      updated_at: response.data.incident.updated_at
+    });
+  } catch (error: any) {
+    console.error('Error updating incident status:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Failed to update incident status',
+      details: error.response?.data || { message: error.message }
+    });
+  }
+});
+
+// MCP endpoint to add incident timestamps
+app.post('/mcp/incidents/:reference/timestamps', async (req: Request, res: Response) => {
+  try {
+    const { reference } = req.params;
+    const { timestamp_name, value } = req.body;
+
+    if (!timestamp_name || !value) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        details: {
+          required: ['timestamp_name', 'value'],
+          received: Object.keys(req.body)
+        }
+      });
+    }
+
+    // First, get the incident to find its ID
+    const incidentsResponse = await incidentIoApi.get('/incidents');
+    const incident = incidentsResponse.data.incidents.find((inc: any) => inc.reference === reference);
+
+    if (!incident) {
+      return res.status(404).json({
+        error: 'Incident not found',
+        details: `No incident found with reference ${reference}`
+      });
+    }
+
+    // Add the timestamp
+    const response = await incidentIoApi.post(`/incidents/${incident.id}/timestamps`, {
+      timestamp_name,
+      value
+    });
+
+    res.json(response.data);
+  } catch (error: any) {
+    console.error('Error adding incident timestamp:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Failed to add incident timestamp',
       details: error.response?.data || { message: error.message }
     });
   }
