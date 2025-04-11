@@ -23,6 +23,43 @@ const incidentIoApi = axios.create({
   },
 });
 
+// Initialize axios instance for v1 API endpoints
+const incidentIoApiV1 = axios.create({
+  baseURL: 'https://api.incident.io/v1',
+  headers: {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  },
+});
+
+// Cache for incident types, statuses, and severities
+let incidentTypesCache: any[] = [];
+let severitiesCache: any[] = [];
+const validStatuses = ['investigating', 'identified', 'monitoring', 'resolved', 'postmortem'];
+
+// Function to refresh the cache
+async function refreshCache() {
+  try {
+    // Get incident types from v1 API
+    const typesResponse = await incidentIoApiV1.get('/incident_types');
+    incidentTypesCache = typesResponse.data.incident_types;
+    console.log('Cached incident types:', incidentTypesCache.map(t => t.name).join(', '));
+
+    // Get severities from v1 API
+    const severitiesResponse = await incidentIoApiV1.get('/severities');
+    severitiesCache = severitiesResponse.data.severities;
+    console.log('Cached severities:', severitiesCache.map(s => s.name).join(', '));
+  } catch (error) {
+    console.error('Error refreshing cache:', error);
+  }
+}
+
+// Refresh cache on startup
+refreshCache();
+
+// Refresh cache every hour
+setInterval(refreshCache, 60 * 60 * 1000);
+
 app.use(express.json());
 
 // Root endpoint with available endpoints
@@ -231,6 +268,21 @@ app.get('/', (req: Request, res: Response) => {
             updated_at: 'string - Last update timestamp'
           }
         }
+      },
+      '/mcp/incident_types': {
+        method: 'GET',
+        description: 'Get available incident types',
+        response: {
+          incident_types: 'array - List of available incident types',
+          each_incident_type: {
+            id: 'string - Incident type ID',
+            name: 'string - Incident type name',
+            description: 'string - Incident type description',
+            rank: 'number - Incident type rank',
+            created_at: 'string - Creation timestamp',
+            updated_at: 'string - Last update timestamp'
+          }
+        }
       }
     }
   });
@@ -333,7 +385,12 @@ app.get('/mcp/incidents', async (req: Request, res: Response) => {
 // MCP endpoint to get severities
 app.get('/mcp/severities', async (req: Request, res: Response) => {
   try {
-    const response = await incidentIoApi.get('/severities');
+    // Forward the authorization header from the request
+    const response = await incidentIoApiV1.get('/severities', {
+      headers: {
+        'Authorization': req.headers.authorization || `Bearer ${apiKey}`
+      }
+    });
     res.json(response.data);
   } catch (error: any) {
     console.error('Error fetching severities:', error.response?.data || error.message);
@@ -344,31 +401,53 @@ app.get('/mcp/severities', async (req: Request, res: Response) => {
   }
 });
 
+// MCP endpoint to get incident types
+app.get('/mcp/incident_types', async (req: Request, res: Response) => {
+  try {
+    // Forward the authorization header from the request
+    const response = await incidentIoApiV1.get('/incident_types', {
+      headers: {
+        'Authorization': req.headers.authorization || `Bearer ${apiKey}`
+      }
+    });
+    res.json(response.data);
+  } catch (error: any) {
+    console.error('Error fetching incident types:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Failed to fetch incident types',
+      details: error.response?.data || { message: error.message }
+    });
+  }
+});
+
 // MCP endpoint to create incidents
 app.post('/mcp/incidents', async (req: Request, res: Response) => {
   try {
-    let {
+    // Extract all fields from request body
+    const {
       name,
       summary,
       severity,
       severity_id,
-      status = 'investigating',
+      status,
       created_at,
-      custom_fields = {},
-      test_incident = false,
-      visibility = 'private',
+      custom_field_entries = [],
+      visibility,
       description,
       incident_type,
-      incident_role_assignments,
-      labels,
+      incident_type_id,
+      incident_role_assignments = [],
+      labels = [],
       postmortem_document_url,
       slack_channel_id,
       slack_channel_name,
       slack_team_id,
       slack_team_name,
-      metadata,
       idempotency_key,
-      mode = 'standard'
+      mode,
+      external_issue_reference,
+      incident_timestamp_values = [],
+      duration_metrics
     } = req.body;
 
     // Validate required fields
@@ -385,40 +464,33 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
     // If severity_id is provided, use it directly, otherwise look up the severity
     let finalSeverityId = severity_id;
     if (!finalSeverityId && severity) {
-      const severitiesResponse = await incidentIoApi.get('/severities');
-      finalSeverityId = severitiesResponse.data.severities.find(
+      const severityObj = severitiesCache.find(
         (s: any) => s.name.toLowerCase() === severity.toLowerCase()
-      )?.id;
-
-      if (!finalSeverityId) {
+      );
+      
+      if (!severityObj) {
         return res.status(400).json({
           error: 'Invalid severity',
           details: {
-            message: `Severity "${severity}" not found. Available severities: ${severitiesResponse.data.severities.map((s: any) => s.name).join(', ')}`,
+            message: `Severity "${severity}" not found. Available severities: ${severitiesCache.map((s: any) => s.name).join(', ')}`,
           }
         });
       }
+      finalSeverityId = severityObj.id;
     }
 
-    // Process metadata if provided
-    if (metadata) {
-      if (metadata.status) {
-        status = metadata.status;
-      }
-      if (metadata.created_at) {
-        created_at = metadata.created_at;
-      }
-      if (metadata.postmortem_document_url) {
-        postmortem_document_url = metadata.postmortem_document_url;
-      }
-      if (metadata.slack_channel_name) {
-        slack_channel_name = metadata.slack_channel_name;
-      }
-      if (metadata.incident_type) {
-        incident_type = metadata.incident_type;
-      }
-      if (metadata.mode) {
-        mode = metadata.mode;
+    // Handle incident type
+    let finalIncidentTypeId = incident_type_id;
+    if (!finalIncidentTypeId && incident_type) {
+      if (typeof incident_type === 'object' && incident_type.id) {
+        finalIncidentTypeId = incident_type.id;
+      } else if (typeof incident_type === 'string') {
+        const typeObj = incidentTypesCache.find(
+          (t: any) => t.name.toLowerCase() === incident_type.toLowerCase()
+        );
+        if (typeObj) {
+          finalIncidentTypeId = typeObj.id;
+        }
       }
     }
 
@@ -428,16 +500,16 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
     // Create the incident with all available fields
     const requestPayload = {
       idempotency_key: finalIdempotencyKey,
+      visibility: visibility,
       incident: {
         name,
         summary,
         severity_id: finalSeverityId,
-        status,
+        incident_status_id: status,
         created_at,
-        custom_field_entries: custom_fields,
-        test_incident,
+        custom_field_entries,
         description,
-        incident_type,
+        incident_type_id: finalIncidentTypeId,
         incident_role_assignments,
         labels,
         postmortem_document_url,
@@ -445,68 +517,80 @@ app.post('/mcp/incidents', async (req: Request, res: Response) => {
         slack_channel_name,
         slack_team_id,
         slack_team_name,
-        visibility,
-        mode
+        mode,
+        external_issue_reference,
+        incident_timestamp_values,
+        duration_metrics,
+        preserve_name: true
       }
     };
     
+    // Log the request payload for debugging
     console.log('Creating incident with payload:', JSON.stringify(requestPayload, null, 2));
-    const response = await incidentIoApi.post('/incidents', requestPayload);
+    
+    // Make the API request
+    try {
+      const response = await incidentIoApi.post('/incidents', requestPayload);
+      console.log('API response:', response.data);
 
-    // Transform the response to match our format
-    const baseIncident = {
-      id: response.data.incident.id,
-      reference: response.data.incident.reference,
-      name: response.data.incident.name,
-      status: response.data.incident.incident_status.name,
-      severity: response.data.incident.severity.name,
-      created_at: response.data.incident.created_at,
-      permalink: response.data.incident.permalink,
-      visibility: response.data.incident.visibility,
-      mode: response.data.incident.mode,
-      summary: response.data.incident.summary,
-      incident_type: response.data.incident.incident_type,
-      postmortem_document_url: response.data.incident.postmortem_document_url,
-      slack_channel_id: response.data.incident.slack_channel_id,
-      slack_channel_name: response.data.incident.slack_channel_name,
-      slack_team_id: response.data.incident.slack_team_id,
-      updated_at: response.data.incident.updated_at
-    };
+      // Transform the response to match our format
+      const baseIncident = {
+        id: response.data.incident.id,
+        reference: response.data.incident.reference,
+        name: response.data.incident.name,
+        status: response.data.incident.incident_status.name,
+        severity: response.data.incident.severity.name,
+        created_at: response.data.incident.created_at,
+        permalink: response.data.incident.permalink,
+        visibility: response.data.incident.visibility,
+        mode: response.data.incident.mode,
+        summary: response.data.incident.summary,
+        incident_type: response.data.incident.incident_type,
+        postmortem_document_url: response.data.incident.postmortem_document_url,
+        slack_channel_id: response.data.incident.slack_channel_id,
+        slack_channel_name: response.data.incident.slack_channel_name,
+        slack_team_id: response.data.incident.slack_team_id,
+        updated_at: response.data.incident.updated_at
+      };
 
-    // Optional fields that may be present
-    const optionalFields = {
-      description: response.data.incident.description,
-      incident_role_assignments: response.data.incident.incident_role_assignments,
-      labels: response.data.incident.labels,
-      custom_fields: response.data.incident.custom_field_entries,
-      resolved_at: response.data.incident.resolved_at,
-      started_at: response.data.incident.started_at,
-      ended_at: response.data.incident.ended_at,
-      call_url: response.data.incident.call_url,
-      call_url_expires_at: response.data.incident.call_url_expires_at,
-      call_url_created_at: response.data.incident.call_url_created_at,
-      call_url_updated_at: response.data.incident.call_url_updated_at,
-      call_url_expires_in: response.data.incident.call_url_expires_in,
-      call_url_expires_in_seconds: response.data.incident.call_url_expires_in_seconds,
-      call_url_expires_in_minutes: response.data.incident.call_url_expires_in_minutes,
-      call_url_expires_in_hours: response.data.incident.call_url_expires_in_hours,
-      call_url_expires_in_days: response.data.incident.call_url_expires_in_days,
-      call_url_expires_in_weeks: response.data.incident.call_url_expires_in_weeks,
-      call_url_expires_in_months: response.data.incident.call_url_expires_in_months,
-      call_url_expires_in_years: response.data.incident.call_url_expires_in_years,
-      external_issue_reference: response.data.incident.external_issue_reference,
-      duration_metrics: response.data.incident.duration_metrics,
-      incident_timestamp_values: response.data.incident.incident_timestamp_values
-    };
+      // Optional fields that may be present
+      const optionalFields = {
+        description: response.data.incident.description,
+        incident_role_assignments: response.data.incident.incident_role_assignments,
+        labels: response.data.incident.labels,
+        custom_field_entries: response.data.incident.custom_field_entries,
+        resolved_at: response.data.incident.resolved_at,
+        started_at: response.data.incident.started_at,
+        ended_at: response.data.incident.ended_at,
+        call_url: response.data.incident.call_url,
+        call_url_expires_at: response.data.incident.call_url_expires_at,
+        call_url_created_at: response.data.incident.call_url_created_at,
+        call_url_updated_at: response.data.incident.call_url_updated_at,
+        call_url_expires_in: response.data.incident.call_url_expires_in,
+        call_url_expires_in_seconds: response.data.incident.call_url_expires_in_seconds,
+        call_url_expires_in_minutes: response.data.incident.call_url_expires_in_minutes,
+        call_url_expires_in_hours: response.data.incident.call_url_expires_in_hours,
+        call_url_expires_in_days: response.data.incident.call_url_expires_in_days,
+        call_url_expires_in_weeks: response.data.incident.call_url_expires_in_weeks,
+        call_url_expires_in_months: response.data.incident.call_url_expires_in_months,
+        call_url_expires_in_years: response.data.incident.call_url_expires_in_years,
+        external_issue_reference: response.data.incident.external_issue_reference,
+        duration_metrics: response.data.incident.duration_metrics,
+        incident_timestamp_values: response.data.incident.incident_timestamp_values
+      };
 
-    // Filter out undefined optional fields
-    const filteredOptionalFields = Object.fromEntries(
-      Object.entries(optionalFields).filter(([_, value]) => value !== undefined)
-    );
+      // Filter out undefined optional fields
+      const filteredOptionalFields = Object.fromEntries(
+        Object.entries(optionalFields).filter(([_, value]) => value !== undefined)
+      );
 
-    const createdIncident = { ...baseIncident, ...filteredOptionalFields };
+      const createdIncident = { ...baseIncident, ...filteredOptionalFields };
 
-    res.status(201).json(createdIncident);
+      res.status(201).json(createdIncident);
+    } catch (error: any) {
+      console.error('API error:', error.response?.data || error.message);
+      throw error;
+    }
   } catch (error: any) {
     console.error('Error creating incident:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
