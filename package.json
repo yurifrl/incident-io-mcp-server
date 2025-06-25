@@ -1,10 +1,10 @@
 {
   "name": "incident-io-mcp-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Incident.io MCP Server",
-  "main": "dist/index.js",
+  "main": "src/index.ts",
   "bin": {
-    "incident-io-mcp-server": "./dist/index.js"
+    "incident-io-mcp-server": "src/index.ts"
   },
   "scripts": {
     "build": "tsc",
@@ -29,7 +29,8 @@
   "files": [
     "dist",
     "package.json",
-    "README.md"
+    "README.md",
+    "src"
   ],
   "type": "module"
 }
