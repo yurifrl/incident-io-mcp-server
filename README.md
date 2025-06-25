@@ -2,75 +2,80 @@
 
 A Model Context Protocol server for Incident.io integration.
 
-## Installation from GitHub
-
-```bash
-# Install directly from GitHub
-npm install -g github:stuartphilp/incident-io-mcp-server
-
-# Or clone and install locally
-git clone https://github.com/stuartphilp/incident-io-mcp-server.git
-cd incident-io-mcp-server
-npm install
-npm run build
-```
-
 ## Usage
 
-Run the server:
+You can run the server directly from GitHub using `npx`.
 
 ```bash
-# If installed globally
-incident-io-mcp-server
+# With npx
+npx github:yurifrl/incident-io-mcp-server
+```
 
-# Or if installed locally
-node ./dist/index.js
+### Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/yurifrl/incident-io-mcp-server.git
+cd incident-io-mcp-server
+
+# Install dependencies
+npm install
+
+# Run the server
+npm run dev
 ```
 
 Required environment variables:
 - `API_KEY`: Your Incident.io API key
 
-Optional environment variables:
-- `PORT`: Server port (default: 3000)
-
 ## Configuration
 
-Example MCP configuration for global installation:
+When using with a MCP client, you can configure it like this.
+This example assumes you are running it directly from GitHub.
 
 ```json
 {
   "mcpServers": {
     "incident-io": {
-      "command": "incident-io-mcp-server",
+      "command": "npx",
+      "args": ["github:yurifrl/incident-io-mcp-server"],
       "env": {
-        "API_KEY": "your-api-key-here",
-        "PORT": "3000"
+        "API_KEY": "your-api-key-here"
       }
     }
   }
 }
 ```
 
-Example MCP configuration for local installation:
+## Available Tools
 
-```json
-{
-  "mcpServers": {
-    "incident-io": {
-      "command": "node",
-      "args": ["./node_modules/incident-io-mcp-server/dist/index.js"],
-      "env": {
-        "API_KEY": "your-api-key-here",
-        "PORT": "3000"
-      }
-    }
-  }
-}
-```
+This server provides the following tools to interact with the Incident.io API.
 
-## Endpoints
+### Incidents
 
-- `GET /health`: Health check endpoint
-- `GET /mcp/incidents`: Get latest incidents
-- `GET /mcp/severities`: Get available severities
-- `POST /mcp/incidents`: Create a new incident 
+*   **`list_incidents`**: Returns a paginated list of incidents.
+*   **`get_incident`**: Fetches a single incident by its reference (e.g., `INC-123`).
+*   **`create_incident`**: Creates a new incident. Requires fields like `name` and `summary`, and can optionally take `severity`, `status`, and more.
+*   **`edit_incident`**: Edits an existing incident's properties, such as its `name` or `summary`.
+*   **`update_incident_status`**: Updates the status of a specific incident.
+
+### Incident Details
+
+*   **`list_incident_updates`**: Gets the timeline of updates for a specific incident.
+*   **`list_incident_timestamps`**: Lists all timestamps (e.g., `detected`, `resolved`) for an incident.
+*   **`add_incident_timestamp`**: Adds a new timestamp to an incident.
+
+### Users & Roles
+
+*   **`list_users`**: Lists all users in the organization.
+*   **`get_user`**: Gets details for a specific user by their ID.
+*   **`list_incident_roles`**: Returns all available incident roles.
+*   **`assign_role_to_incident`**: Assigns a user to a role for a specific incident.
+*   **`revoke_role_from_incident`**: Revokes a user's role from an incident.
+
+### Metadata
+
+*   **`list_severities`**: Returns a list of all possible incident severities.
+*   **`list_incident_types`**: Returns a list of all incident types.
+*   **`get_incident_type`**: Gets details for a specific incident type.
+*   **`list_incident_statuses`**: Returns a list of all possible incident statuses.
