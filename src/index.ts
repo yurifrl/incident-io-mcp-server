@@ -124,6 +124,94 @@ server.registerTool(
   }
 );
 
+// edit_incident -------------------------------------------------------------
+server.registerTool(
+  "edit_incident",
+  {
+    title: "Edit Incident",
+    description: "Edit an incident's properties, such as its name or summary.",
+    inputSchema: {
+      reference: z.string(),
+      name: z.string().optional(),
+      summary: z.string().optional(),
+    },
+  },
+  async ({ reference, name, summary }: { reference: string; name?: string; summary?: string }) => {
+    try {
+      const { data: incidentData } = await incidentV2.get(`/incidents/${reference}`);
+      const incidentId = incidentData.incident.id;
+
+      const payload: Record<string, unknown> = {};
+      if (name) payload.name = name;
+      if (summary) payload.summary = summary;
+
+      if (Object.keys(payload).length === 0) {
+        return { isError: true, content: [{ type: "text", text: "Nothing to update" }] };
+      }
+
+      const { data } = await incidentV2.post(`/incidents/${incidentId}`, payload);
+      return { content: [{ type: "text", text: toText(data.incident) }] };
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return { isError: true, content: [{ type: "text", text: `Incident ${reference} not found` }] };
+      }
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// list_incident_updates ----------------------------------------------------
+server.registerTool(
+  "list_incident_updates",
+  {
+    title: "List Incident Updates",
+    description: "Get the timeline of updates for a specific incident.",
+    inputSchema: {
+      reference: z.string(),
+    },
+  },
+  async ({ reference }: { reference: string }) => {
+    try {
+      const { data: incidentData } = await incidentV2.get(`/incidents/${reference}`);
+      const incidentId = incidentData.incident.id;
+
+      const { data } = await incidentV2.get(`/incidents/${incidentId}/updates`);
+      return { content: [{ type: "text", text: toText(data.incident_updates) }] };
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return { isError: true, content: [{ type: "text", text: `Incident ${reference} not found` }] };
+      }
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// list_incident_timestamps ------------------------------------------------
+server.registerTool(
+  "list_incident_timestamps",
+  {
+    title: "List Incident Timestamps",
+    description: "List all timestamps for an incident.",
+    inputSchema: {
+      reference: z.string(),
+    },
+  },
+  async ({ reference }: { reference: string }) => {
+    try {
+      const { data: incidentData } = await incidentV2.get(`/incidents/${reference}`);
+      const incidentId = incidentData.incident.id;
+
+      const { data } = await incidentV2.get(`/incidents/${incidentId}/timestamps`);
+      return { content: [{ type: "text", text: toText(data.incident_timestamps) }] };
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return { isError: true, content: [{ type: "text", text: `Incident ${reference} not found` }] };
+      }
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
 // list_severities -----------------------------------------------------------
 server.registerTool(
   "list_severities",
@@ -136,6 +224,39 @@ server.registerTool(
   "list_incident_types",
   { title: "List Incident Types", description: "Return cached incident types" },
   async () => ({ content: [{ type: "text", text: toText(incidentTypes) }] })
+);
+
+// get_incident_type ---------------------------------------------------------
+server.registerTool(
+  "get_incident_type",
+  {
+    title: "Get Incident Type",
+    description: "Get details for a specific incident type.",
+    inputSchema: {
+      id: z.string(),
+    },
+  },
+  async ({ id }: { id: string }) => {
+    try {
+      const { data } = await incidentV1.get(`/incident_types/${id}`);
+      return { content: [{ type: "text", text: toText(data.incident_type) }] };
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return { isError: true, content: [{ type: "text", text: `Incident type ${id} not found` }] };
+      }
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// list_incident_statuses ----------------------------------------------------
+server.registerTool(
+  "list_incident_statuses",
+  {
+    title: "List Incident Statuses",
+    description: "Return cached incident statuses.",
+  },
+  async () => ({ content: [{ type: "text", text: toText(incidentStatuses) }] })
 );
 
 // create_incident -----------------------------------------------------------
@@ -326,6 +447,144 @@ server.registerTool(
     try {
       const resp = await incidentV2.post(`/incidents/${incident.id}/timestamps`, { timestamp_name, value });
       return { content: [{ type: "text", text: toText(resp.data) }] };
+    } catch (err: any) {
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// User & Role Management ----------------------------------------------------
+
+// list_users ----------------------------------------------------------------
+server.registerTool(
+  "list_users",
+  {
+    title: "List Users",
+    description: "List all users in the organization.",
+    inputSchema: {
+      page_size: z.number().int().min(1).max(100).optional(),
+      after: z.string().optional(),
+    },
+  },
+  async ({ page_size = 25, after }: { page_size?: number; after?: string }) => {
+    const qs = new URLSearchParams();
+    qs.append("page_size", String(page_size));
+    if (after) qs.append("after", after);
+    try {
+      const { data } = await incidentV2.get(`/users?${qs.toString()}`);
+      return { content: [{ type: "text", text: toText(data) }] };
+    } catch (err: any) {
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// get_user ------------------------------------------------------------------
+server.registerTool(
+  "get_user",
+  {
+    title: "Get User",
+    description: "Get details for a specific user by ID.",
+    inputSchema: {
+      id: z.string(),
+    },
+  },
+  async ({ id }: { id: string }) => {
+    try {
+      const { data } = await incidentV2.get(`/users/${id}`);
+      return { content: [{ type: "text", text: toText(data.user) }] };
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return { isError: true, content: [{ type: "text", text: `User ${id} not found` }] };
+      }
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// list_incident_roles -------------------------------------------------------
+server.registerTool(
+  "list_incident_roles",
+  {
+    title: "List Incident Roles",
+    description: "Return available incident roles.",
+  },
+  async () => {
+    const { data } = await incidentV2.get("/incident_roles");
+    return { content: [{ type: "text", text: toText(data.incident_roles) }] };
+  }
+);
+
+// assign_role_to_incident -------------------------------------------------
+server.registerTool(
+  "assign_role_to_incident",
+  {
+    title: "Assign Role to Incident",
+    description: "Assign a user to a specific role for an incident.",
+    inputSchema: {
+      reference: z.string(),
+      incident_role_id: z.string(),
+      user_id: z.string().optional(),
+      email: z.string().optional(),
+    },
+  },
+  async ({ reference, incident_role_id, user_id, email }: { reference: string; incident_role_id: string; user_id?: string; email?: string }) => {
+    if (!user_id && !email) {
+      return { isError: true, content: [{ type: "text", text: `User ID or email is required.` }] };
+    }
+
+    try {
+      const { data: incidentData } = await incidentV2.get(`/incidents/${reference}`);
+      const incidentId = incidentData.incident.id;
+
+      const payload: Record<string, any> = {
+        incident_id: incidentId,
+        incident_role_id: incident_role_id,
+        assignee: {},
+      };
+      if (user_id) payload.assignee.id = user_id;
+      if (email) payload.assignee.email = email;
+
+      const { data } = await incidentV1.post("/incident_memberships", payload);
+      return { content: [{ type: "text", text: toText(data.incident_membership) }] };
+    } catch (err: any) {
+      return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
+    }
+  }
+);
+
+// revoke_role_from_incident -------------------------------------------------
+server.registerTool(
+  "revoke_role_from_incident",
+  {
+    title: "Revoke Role from Incident",
+    description: "Revoke a user's role from an incident.",
+    inputSchema: {
+      reference: z.string(),
+      incident_role_id: z.string(),
+      user_id: z.string().optional(),
+      email: z.string().optional(),
+    },
+  },
+  async ({ reference, incident_role_id, user_id, email }: { reference: string; incident_role_id: string; user_id?: string; email?: string }) => {
+    if (!user_id && !email) {
+      return { isError: true, content: [{ type: "text", text: `User ID or email is required.` }] };
+    }
+
+    try {
+      const { data: incidentData } = await incidentV2.get(`/incidents/${reference}`);
+      const incidentId = incidentData.incident.id;
+
+      const payload: Record<string, any> = {
+        incident_id: incidentId,
+        incident_role_id: incident_role_id,
+        assignee: {},
+      };
+      if (user_id) payload.assignee.id = user_id;
+      if (email) payload.assignee.email = email;
+
+      const { data } = await incidentV1.post("/incident_memberships/revoke", payload);
+      return { content: [{ type: "text", text: toText(data) }] };
     } catch (err: any) {
       return { isError: true, content: [{ type: "text", text: toText(err.response?.data ?? err.message) }] };
     }
