@@ -151,27 +151,58 @@ server.registerTool(
       severity_id: z.string().optional(),
       status: z.string().optional(),
       created_at: z.string().optional(),
-      custom_field_entries: z.array(z.any()).optional(),
-      visibility: z.string().optional(),
-      description: z.string().optional(),
+      visibility: z.enum(["public", "private"]).optional(),
       incident_type: z.string().optional(),
       incident_type_id: z.string().optional(),
-      incident_role_assignments: z.array(z.any()).optional(),
-      labels: z.array(z.any()).optional(),
-      postmortem_document_url: z.string().optional(),
-      slack_channel_id: z.string().optional(),
-      slack_channel_name: z.string().optional(),
-      slack_team_id: z.string().optional(),
-      slack_team_name: z.string().optional(),
+      mode: z.enum(["standard", "retrospective", "test", "tutorial"]).optional(),
       idempotency_key: z.string().optional(),
-      mode: z.enum(["standard", "retrospective"]).optional(),
-      external_issue_reference: z.any().optional(),
-      incident_timestamp_values: z.any().optional(),
-      duration_metrics: z.any().optional(),
-      metadata: z.any().optional(),
+      custom_field_entries: z
+        .array(
+          z.object({
+            custom_field_id: z.string(),
+            values: z.array(
+              z.object({
+                value_text: z.string().optional(),
+                value_link: z.string().optional(),
+                value_numeric: z.number().optional(),
+                value_option_id: z.string().optional(),
+                value_catalog_entry_id: z.string().optional(),
+                value_timestamp: z.string().optional(),
+              })
+            ),
+          })
+        )
+        .optional(),
+      incident_role_assignments: z
+        .array(
+          z.object({
+            assignee: z
+              .object({
+                id: z.string().optional(),
+                email: z.string().optional(),
+                slack_user_id: z.string().optional(),
+              })
+              .optional(),
+            incident_role_id: z.string(),
+          })
+        )
+        .optional(),
+      incident_timestamp_values: z
+        .array(
+          z.object({
+            incident_timestamp_id: z.string(),
+            value: z.string(),
+          })
+        )
+        .optional(),
+      slack_channel_name_override: z.string().optional(),
+      slack_team_id: z.string().optional(),
+
+      // Convenience params mapping to custom fields
       product: z.string().optional(),
       region: z.string().optional(),
       feature: z.string().optional(),
+
       test_incident: z.boolean().optional(),
     },
   },
@@ -182,26 +213,18 @@ server.registerTool(
       summary,
       severity,
       severity_id,
+      status,
+      created_at,
+      visibility,
       incident_type,
       incident_type_id,
-      status,
       mode,
-      visibility,
-      created_at,
-      custom_field_entries = [],
-      description,
-      incident_role_assignments = [],
-      labels = [],
-      postmortem_document_url,
-      slack_channel_id,
-      slack_channel_name,
-      slack_team_id,
-      slack_team_name,
       idempotency_key,
-      external_issue_reference,
+      custom_field_entries = [],
+      incident_role_assignments = [],
       incident_timestamp_values = [],
-      duration_metrics,
-      metadata = {},
+      slack_channel_name_override,
+      slack_team_id,
       product,
       region,
       feature,
@@ -209,7 +232,7 @@ server.registerTool(
     } = args;
 
     // Determine severity
-    let finalSeverityId = severity_id ?? findSeverityId(severity ?? "");
+    const finalSeverityId = severity_id ?? findSeverityId(severity ?? "");
     if (!finalSeverityId) {
       return { isError: true, content: [{ type: "text", text: `Invalid severity provided` }] };
     }
@@ -224,30 +247,24 @@ server.registerTool(
       idempotency_key: idempotency_key ?? `mcp-${Date.now()}`,
       severity_id: finalSeverityId,
       incident_status_id: finalStatusId,
-      visibility: visibility ?? metadata.visibility ?? "private",
+      visibility: visibility ?? "private",
       mode: mode ?? "standard",
       incident_type_id: finalIncidentTypeId,
       name,
       summary,
-      created_at: created_at ?? metadata.created_at,
+      created_at,
       custom_field_entries: [
         ...custom_field_entries,
         ...(product ? [{ custom_field_id: "product", values: [{ value_text: product }] }] : []),
         ...(region ? [{ custom_field_id: "region", values: [{ value_text: region }] }] : []),
         ...(feature ? [{ custom_field_id: "feature", values: [{ value_text: feature }] }] : []),
       ],
-      description: description ?? summary,
-      incident_role_assignments,
-      labels,
-      postmortem_document_url,
-      slack_channel_id,
-      slack_channel_name,
-      slack_team_id,
-      slack_team_name,
-      external_issue_reference,
-      duration_metrics,
-      incident_timestamp_values,
+      description: summary,
       test_incident,
+      incident_role_assignments,
+      incident_timestamp_values,
+      slack_channel_name_override,
+      slack_team_id,
     };
 
     try {
