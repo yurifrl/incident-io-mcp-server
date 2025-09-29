@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "Incident.io MCP Server",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "main": "dist/index.js",
   "bin": {
