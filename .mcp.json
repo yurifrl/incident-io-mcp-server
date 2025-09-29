@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "incident-io": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": [
+        "-y",
+        "github:yurifrl/incident-io-mcp-server"
+      ],
+      "env": {
+        "API_KEY": "$INCIDENTSIO_API_KEY"
+      }
+    }
+  }
+}
